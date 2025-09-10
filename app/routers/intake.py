@@ -187,3 +187,78 @@ def delete_candidate(
     except Exception as e:
         log_error(e, context={"operation": "delete_candidate", "admin_id": current_admin.id, "candidate_id": candidate_id})
         raise
+
+@router.put("/jobs/{job_id}", response_model=schemas.JobResponse)
+def update_job(
+    job_id: int,
+    payload: schemas.IntakeJob,
+    db: Session = Depends(get_db),
+    current_admin: models.Admin = Depends(get_current_admin)
+):
+    """Update an existing job."""
+    try:
+        job = db.query(models.Job).filter(models.Job.id == job_id).first()
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        
+        # Update job fields
+        job.title = payload.title
+        job.jd_text = payload.jd_text
+        job.jd_json = {"must_have": payload.must_have, "nice_to_have": payload.nice_to_have}
+        
+        db.commit()
+        db.refresh(job)
+        
+        log_business_event("job_updated", "job", job.id,
+                          admin_id=current_admin.id, title=payload.title)
+        
+        # Invalidate related cache entries
+        cache_service.invalidate_related("job", job.id)
+        
+        return job
+    except HTTPException:
+        raise
+    except Exception as e:
+        log_error(e, context={"operation": "update_job", "admin_id": current_admin.id, "job_id": job_id})
+        raise
+
+@router.delete("/jobs/{job_id}")
+def delete_job(
+    job_id: int,
+    db: Session = Depends(get_db),
+    current_admin: models.Admin = Depends(get_current_admin)
+):
+    """Delete a job."""
+    try:
+        job = db.query(models.Job).filter(models.Job.id == job_id).first()
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        
+        db.delete(job)
+        db.commit()
+        
+        log_business_event("job_deleted", "job", job_id,
+                          admin_id=current_admin.id, title=job.title)
+        
+        # Invalidate related cache entries
+        cache_service.invalidate_related("job", job_id)
+        
+        return {"message": "Job deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        log_error(e, context={"operation": "delete_job", "admin_id": current_admin.id, "job_id": job_id})
+        raise
+
+@router.get("/applications", response_model=List[schemas.ApplicationResponse])
+def get_applications(
+    db: Session = Depends(get_db),
+    current_admin: models.Admin = Depends(get_current_admin)
+):
+    """Get all applications."""
+    try:
+        applications = db.query(models.Application).all()
+        return applications
+    except Exception as e:
+        log_error(e, context={"operation": "get_applications", "admin_id": current_admin.id})
+        raise

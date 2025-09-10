@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from .config import settings
 from .db import Base, engine, SessionLocal
-from .routers import intake, match, interview, email_inbound, scoring, realtime, auth, cache, tasks, docs
+from .routers import intake, match, interview, email_inbound, scoring, realtime, auth, cache, tasks, docs, dashboard
 from .services.auth import create_default_admin
 from .services.logger import get_logger
 from .middleware.logging import LoggingMiddleware
@@ -146,6 +146,7 @@ app.include_router(realtime.router)
 app.include_router(cache.router)
 app.include_router(tasks.router)
 app.include_router(docs.router)
+app.include_router(dashboard.router)
 
 @app.on_event("startup")
 async def startup_event():

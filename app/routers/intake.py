@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 from ..db import get_db
 from .. import models, schemas
 from ..services.auth import get_current_admin
@@ -34,41 +34,64 @@ def create_job(
 
 @router.post("/candidate", response_model=schemas.CandidateResponse)
 async def create_candidate(
-    payload: schemas.IntakeCandidate, 
+    name: str = Form(...),
+    email: str = Form(...),
+    phone: Optional[str] = Form(None),
+    resume_file: Optional[UploadFile] = File(None),
+    resume_text: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     current_admin: models.Admin = Depends(get_current_admin)
 ):
     try:
         # Parse resume if provided
         resume_data = {"skills": []}
-        if payload.resume_url:
-            parsed_resume = await resume_parser.parse_resume_from_url(payload.resume_url)
+        resume_url = None
+        
+        if resume_file and resume_file.filename:
+            # Handle file upload
+            # For now, we'll parse the file content directly
+            # In production, you'd want to save the file and store the URL
+            file_content = await resume_file.read()
+            
+            # Try to decode as text (for .txt files)
+            try:
+                text_content = file_content.decode('utf-8')
+                parsed_resume = await resume_parser.parse_resume_from_text(text_content)
+                resume_data = {
+                    "skills": parsed_resume.get("skills", []),
+                    "experience": parsed_resume.get("experience", []),
+                    "education": parsed_resume.get("education", []),
+                    "text": parsed_resume.get("text", text_content)
+                }
+            except UnicodeDecodeError:
+                # For binary files like PDF, we'd need a PDF parser
+                # For now, just store the filename
+                resume_data = {
+                    "skills": [],
+                    "experience": "",
+                    "education": "",
+                    "text": f"File uploaded: {resume_file.filename}"
+                }
+        elif resume_text:
+            parsed_resume = await resume_parser.parse_resume_from_text(resume_text)
             resume_data = {
                 "skills": parsed_resume.get("skills", []),
                 "experience": parsed_resume.get("experience", []),
                 "education": parsed_resume.get("education", []),
-                "text": parsed_resume.get("text", "")
-            }
-        elif payload.resume_text:
-            parsed_resume = await resume_parser.parse_resume_from_text(payload.resume_text)
-            resume_data = {
-                "skills": parsed_resume.get("skills", []),
-                "experience": parsed_resume.get("experience", []),
-                "education": parsed_resume.get("education", []),
-                "text": parsed_resume.get("text", payload.resume_text)
+                "text": parsed_resume.get("text", resume_text)
             }
         
         cand = models.Candidate(
-            name=payload.name, 
-            email=payload.email, 
-            phone=payload.phone,
-            resume_url=payload.resume_url, 
+            name=name, 
+            email=email, 
+            phone=phone,
+            resume_url=resume_url, 
             resume_json=resume_data
         )
         db.add(cand); db.commit(); db.refresh(cand)
         
         log_business_event("candidate_created", "candidate", cand.id,
-                          admin_id=current_admin.id, name=payload.name, email=payload.email,
+                          admin_id=current_admin.id, name=name, email=email,
                           skills_count=len(resume_data.get("skills", [])))
         
         # Invalidate related cache entries

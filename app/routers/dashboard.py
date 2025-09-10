@@ -27,24 +27,25 @@ def get_dashboard_stats(
         
         # Count applications by fit status
         fit_applications = db.query(func.count(models.Application.id)).filter(
-            models.Application.fit_status == "FIT"
+            models.Application.fit_status == models.FitStatus.FIT
         ).scalar() or 0
         
         borderline_applications = db.query(func.count(models.Application.id)).filter(
-            models.Application.fit_status == "BORDERLINE"
+            models.Application.fit_status == models.FitStatus.BORDERLINE
         ).scalar() or 0
         
         not_fit_applications = db.query(func.count(models.Application.id)).filter(
-            models.Application.fit_status == "NOT_FIT"
+            models.Application.fit_status == models.FitStatus.NOT_FIT
         ).scalar() or 0
         
         # Count interview links by status
         scheduled_interviews = db.query(func.count(models.InterviewLink.id)).filter(
-            models.InterviewLink.status == "SCHEDULED"
+            models.InterviewLink.status == models.InterviewStatus.SCHEDULED
         ).scalar() or 0
         
-        completed_interviews = db.query(func.count(models.InterviewLink.id)).filter(
-            models.InterviewLink.status == "COMPLETED"
+        # Count completed interviews (from Interview table, not InterviewLink)
+        completed_interviews = db.query(func.count(models.Interview.id)).filter(
+            models.Interview.status == models.RunStatus.COMPLETED
         ).scalar() or 0
         
         return {
@@ -69,42 +70,60 @@ def get_recent_activity(
 ) -> Dict[str, Any]:
     """Get recent activity for dashboard."""
     try:
-        # Get recent applications
-        recent_applications = db.query(models.Application).order_by(
+        activities = []
+        
+        # Get recent applications with joins
+        recent_applications = db.query(
+            models.Application,
+            models.Candidate.name.label('candidate_name'),
+            models.Job.title.label('job_title')
+        ).join(
+            models.Candidate, models.Application.candidate_id == models.Candidate.id
+        ).join(
+            models.Job, models.Application.job_id == models.Job.id
+        ).order_by(
             models.Application.created_at.desc()
         ).limit(5).all()
         
-        # Get recent interview links
-        recent_interviews = db.query(models.InterviewLink).order_by(
+        # Add application activities
+        for app, candidate_name, job_title in recent_applications:
+            activities.append({
+                "id": f"app_{app.id}",
+                "type": "application",
+                "description": f"New application: {candidate_name} for {job_title}",
+                "timestamp": app.created_at.isoformat(),
+                "status": app.fit_status.value if app.fit_status else None
+            })
+        
+        # Get recent interview links with joins
+        recent_interviews = db.query(
+            models.InterviewLink,
+            models.Candidate.name.label('candidate_name'),
+            models.Job.title.label('job_title')
+        ).join(
+            models.Application, models.InterviewLink.application_id == models.Application.id
+        ).join(
+            models.Candidate, models.Application.candidate_id == models.Candidate.id
+        ).join(
+            models.Job, models.Application.job_id == models.Job.id
+        ).order_by(
             models.InterviewLink.created_at.desc()
         ).limit(5).all()
+        
+        # Add interview activities
+        for interview, candidate_name, job_title in recent_interviews:
+            activities.append({
+                "id": f"interview_{interview.id}",
+                "type": "interview",
+                "description": f"Interview {interview.status.value.lower() if interview.status else 'unknown'}: {candidate_name} for {job_title}",
+                "timestamp": interview.created_at.isoformat(),
+                "status": interview.status.value if interview.status else None
+            })
         
         # Get recent candidates
         recent_candidates = db.query(models.Candidate).order_by(
             models.Candidate.created_at.desc()
         ).limit(5).all()
-        
-        activities = []
-        
-        # Add application activities
-        for app in recent_applications:
-            activities.append({
-                "id": f"app_{app.id}",
-                "type": "application",
-                "description": f"New application: {app.candidate.name} for {app.job.title}",
-                "timestamp": app.created_at.isoformat(),
-                "status": app.fit_status.value if app.fit_status else None
-            })
-        
-        # Add interview activities
-        for interview in recent_interviews:
-            activities.append({
-                "id": f"interview_{interview.id}",
-                "type": "interview",
-                "description": f"Interview {interview.status.value.lower()}: {interview.application.candidate.name} for {interview.application.job.title}",
-                "timestamp": interview.created_at.isoformat(),
-                "status": interview.status.value
-            })
         
         # Add candidate activities
         for candidate in recent_candidates:

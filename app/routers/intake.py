@@ -1,5 +1,6 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from typing import List
 from ..db import get_db
 from .. import models, schemas
 from ..services.auth import get_current_admin
@@ -76,4 +77,113 @@ async def create_candidate(
         return cand
     except Exception as e:
         log_error(e, context={"operation": "create_candidate", "admin_id": current_admin.id})
+        raise
+
+@router.get("/jobs", response_model=List[schemas.JobResponse])
+def get_jobs(
+    db: Session = Depends(get_db),
+    current_admin: models.Admin = Depends(get_current_admin)
+):
+    """Get all jobs."""
+    try:
+        jobs = db.query(models.Job).all()
+        return jobs
+    except Exception as e:
+        log_error(e, context={"operation": "get_jobs", "admin_id": current_admin.id})
+        raise
+
+@router.get("/candidates", response_model=List[schemas.CandidateResponse])
+def get_candidates(
+    db: Session = Depends(get_db),
+    current_admin: models.Admin = Depends(get_current_admin)
+):
+    """Get all candidates."""
+    try:
+        candidates = db.query(models.Candidate).all()
+        return candidates
+    except Exception as e:
+        log_error(e, context={"operation": "get_candidates", "admin_id": current_admin.id})
+        raise
+
+@router.put("/candidates/{candidate_id}", response_model=schemas.CandidateResponse)
+async def update_candidate(
+    candidate_id: int,
+    payload: schemas.IntakeCandidate,
+    db: Session = Depends(get_db),
+    current_admin: models.Admin = Depends(get_current_admin)
+):
+    """Update an existing candidate."""
+    try:
+        candidate = db.query(models.Candidate).filter(models.Candidate.id == candidate_id).first()
+        if not candidate:
+            raise HTTPException(status_code=404, detail="Candidate not found")
+        
+        # Parse resume if provided
+        resume_data = candidate.resume_json or {"skills": []}
+        if payload.resume_url:
+            parsed_resume = await resume_parser.parse_resume_from_url(payload.resume_url)
+            resume_data = {
+                "skills": parsed_resume.get("skills", []),
+                "experience": parsed_resume.get("experience", []),
+                "education": parsed_resume.get("education", []),
+                "text": parsed_resume.get("text", "")
+            }
+        elif payload.resume_text:
+            parsed_resume = await resume_parser.parse_resume_from_text(payload.resume_text)
+            resume_data = {
+                "skills": parsed_resume.get("skills", []),
+                "experience": parsed_resume.get("experience", []),
+                "education": parsed_resume.get("education", []),
+                "text": parsed_resume.get("text", payload.resume_text)
+            }
+        
+        # Update candidate fields
+        candidate.name = payload.name
+        candidate.email = payload.email
+        candidate.phone = payload.phone
+        candidate.resume_url = payload.resume_url
+        candidate.resume_json = resume_data
+        
+        db.commit()
+        db.refresh(candidate)
+        
+        log_business_event("candidate_updated", "candidate", candidate.id,
+                          admin_id=current_admin.id, name=payload.name, email=payload.email)
+        
+        # Invalidate related cache entries
+        cache_service.invalidate_related("candidate", candidate.id)
+        
+        return candidate
+    except HTTPException:
+        raise
+    except Exception as e:
+        log_error(e, context={"operation": "update_candidate", "admin_id": current_admin.id, "candidate_id": candidate_id})
+        raise
+
+@router.delete("/candidates/{candidate_id}")
+def delete_candidate(
+    candidate_id: int,
+    db: Session = Depends(get_db),
+    current_admin: models.Admin = Depends(get_current_admin)
+):
+    """Delete a candidate."""
+    try:
+        candidate = db.query(models.Candidate).filter(models.Candidate.id == candidate_id).first()
+        if not candidate:
+            raise HTTPException(status_code=404, detail="Candidate not found")
+        
+        db.delete(candidate)
+        db.commit()
+        
+        log_business_event("candidate_deleted", "candidate", candidate_id,
+                          admin_id=current_admin.id, name=candidate.name, email=candidate.email)
+        
+        # Invalidate related cache entries
+        cache_service.invalidate_related("candidate", candidate_id)
+        
+        return {"message": "Candidate deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        log_error(e, context={"operation": "delete_candidate", "admin_id": current_admin.id, "candidate_id": candidate_id})
         raise

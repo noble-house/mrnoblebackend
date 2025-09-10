@@ -92,7 +92,7 @@ def get_jobs(
         log_error(e, context={"operation": "get_jobs", "admin_id": current_admin.id})
         raise
 
-@router.get("/candidates", response_model=List[schemas.CandidateResponse])
+@router.get("/candidates")
 def get_candidates(
     db: Session = Depends(get_db),
     current_admin: models.Admin = Depends(get_current_admin)
@@ -100,7 +100,26 @@ def get_candidates(
     """Get all candidates."""
     try:
         candidates = db.query(models.Candidate).all()
-        return candidates
+        
+        # Transform candidates to include skills, experience, education from resume_json
+        result = []
+        for candidate in candidates:
+            resume_data = candidate.resume_json or {}
+            candidate_dict = {
+                "id": candidate.id,
+                "name": candidate.name,
+                "email": candidate.email,
+                "phone": candidate.phone,
+                "resume_url": candidate.resume_url,
+                "skills": resume_data.get("skills", []),
+                "experience": resume_data.get("experience", ""),
+                "education": resume_data.get("education", ""),
+                "created_at": candidate.created_at.isoformat(),
+                "updated_at": candidate.created_at.isoformat()  # Using created_at as updated_at for now
+            }
+            result.append(candidate_dict)
+        
+        return result
     except Exception as e:
         log_error(e, context={"operation": "get_candidates", "admin_id": current_admin.id})
         raise

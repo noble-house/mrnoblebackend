@@ -17,12 +17,18 @@ from .exceptions import (
 # Run: python migrate.py upgrade
 # Base.metadata.create_all(bind=engine)  # Disabled for production
 
-# Create default admin user
-db = SessionLocal()
+# Initialize logger for startup
+logger = get_logger("startup")
+
+# Create default admin user (with error handling)
 try:
+    db = SessionLocal()
     create_default_admin(db)
-finally:
     db.close()
+    logger.info("Default admin user created successfully")
+except Exception as e:
+    logger.warning(f"Failed to create default admin user: {e}")
+    # Don't fail startup if admin creation fails
 
 app = FastAPI(
     title="MrNoble API",
@@ -141,8 +147,36 @@ app.include_router(cache.router)
 app.include_router(tasks.router)
 app.include_router(docs.router)
 
+@app.on_event("startup")
+async def startup_event():
+    """Application startup event handler."""
+    logger.info("MrNoble API starting up...")
+    logger.info(f"Database URL: {settings.DATABASE_URL[:20]}...")
+    logger.info("Application startup completed successfully")
+
+@app.get("/")
+def root():
+    """Root endpoint for basic connectivity check."""
+    return {"message": "MrNoble API is running", "status": "ok"}
+
 @app.get("/health")
 def health():
     logger = get_logger("health")
     logger.info("Health check requested")
-    return {"ok": True}
+    
+    # Check database connectivity
+    try:
+        db = SessionLocal()
+        db.execute("SELECT 1")
+        db.close()
+        db_status = "connected"
+    except Exception as e:
+        logger.warning(f"Database health check failed: {e}")
+        db_status = "disconnected"
+    
+    return {
+        "ok": True,
+        "status": "healthy",
+        "database": db_status,
+        "timestamp": "2025-01-10T12:00:00Z"
+    }

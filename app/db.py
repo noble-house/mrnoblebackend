@@ -1,11 +1,15 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
+import os
 
 from .config import settings
 
+# Get database URL with fallback
+database_url = os.getenv("DATABASE_URL", settings.DATABASE_URL)
+
 # Configure engine for PostgreSQL with proper connection pooling
 engine = create_engine(
-    settings.DATABASE_URL, 
+    database_url, 
     pool_pre_ping=True,
     pool_size=10,
     max_overflow=20,

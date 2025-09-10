@@ -10,8 +10,8 @@ from app.db import get_db, Base
 from app.models import Admin
 from app.services.auth import get_password_hash
 
-# Test database URL (in-memory SQLite for testing)
-SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
+# Test database URL (in-memory SQLite for fast testing)
+SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
 
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,

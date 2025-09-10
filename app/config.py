@@ -6,7 +6,7 @@ load_dotenv()
 
 class Settings(BaseModel):
     # Database
-    DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./mrnoble.db")
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://user:password@localhost:5432/mrnoble")
     
     # Email
     SENDGRID_API_KEY: str = os.getenv("SENDGRID_API_KEY", "")

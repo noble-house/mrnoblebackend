@@ -18,7 +18,8 @@ def main():
     
     # Set environment variables for testing
     os.environ["TESTING"] = "true"
-    os.environ["DATABASE_URL"] = "sqlite:///./test.db"
+    # Use in-memory SQLite for fast testing (no file I/O)
+    os.environ["DATABASE_URL"] = "sqlite:///:memory:"
     os.environ["REDIS_URL"] = "redis://localhost:6379/1"  # Use different DB for tests
     os.environ["SECRET_KEY"] = "test-secret-key-for-testing-only"
     os.environ["SENDGRID_API_KEY"] = "test-sendgrid-key"

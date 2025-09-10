@@ -79,7 +79,7 @@ async def create_candidate(
         log_error(e, context={"operation": "create_candidate", "admin_id": current_admin.id})
         raise
 
-@router.get("/jobs", response_model=List[schemas.JobResponse])
+@router.get("/jobs")
 def get_jobs(
     db: Session = Depends(get_db),
     current_admin: models.Admin = Depends(get_current_admin)
@@ -87,7 +87,24 @@ def get_jobs(
     """Get all jobs."""
     try:
         jobs = db.query(models.Job).all()
-        return jobs
+        
+        # Transform jobs to include all fields the frontend expects
+        result = []
+        for job in jobs:
+            job_dict = {
+                "id": job.id,
+                "title": job.title or "",
+                "jd_text": job.jd_text or "",
+                "must_have": job.must_have or [],
+                "nice_to_have": job.nice_to_have or [],
+                "status": "active",  # Default status since it's not in the model yet
+                "applications_count": 0,  # Default count since it's not in the model yet
+                "created_at": job.created_at.isoformat(),
+                "updated_at": job.created_at.isoformat()  # Using created_at as updated_at for now
+            }
+            result.append(job_dict)
+        
+        return result
     except Exception as e:
         log_error(e, context={"operation": "get_jobs", "admin_id": current_admin.id})
         raise
